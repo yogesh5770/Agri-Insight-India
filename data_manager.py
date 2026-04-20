@@ -2,7 +2,8 @@ import pandas as pd
 import json
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.pipeline import Pipeline
 
 class DataManager:
     def __init__(self, csv_path):
@@ -24,7 +25,7 @@ class DataManager:
     def get_district_trends(self, state_name, district_name, crop_name, metric='YIELD'):
         """
         Returns time-series data for a crop in a district within a specific state,
-        including high-accuracy polynomial predictions and volatility forecasting up to 2030.
+        including high-accuracy seamless polynomial predictions and volatility forecasting up to 2030.
         """
         col_match = f"{crop_name.upper()} {metric.upper()}"
         target_col = None
@@ -54,34 +55,39 @@ class DataManager:
         if not historical_data:
             return []
 
-        # Prediction Logic using Polynomial Regression & Volatility
+        # Prediction Logic using Degree-3 Polynomial Regression & Continuity Offset
         try:
             X = subset['Year'].values.reshape(-1, 1)
             y = subset[target_col].values
             
-            # Polynomial Features (Degree 2 for steady trend curves)
-            poly = PolynomialFeatures(degree=2)
-            X_poly = poly.fit_transform(X)
-            
-            model = LinearRegression()
-            model.fit(X_poly, y)
+            # Pipeline with Scaling for numerical stability with large year values
+            model = Pipeline([
+                ('scaler', StandardScaler()),
+                ('poly', PolynomialFeatures(degree=3)),
+                ('reg', LinearRegression())
+            ])
+            model.fit(X, y)
             
             # Volatility estimation based on historic residuals (Standard Deviation)
-            y_pred_hist = model.predict(X_poly)
+            y_pred_hist = model.predict(X)
             volatility = np.std(y - y_pred_hist)
             
             last_year = int(subset['Year'].max())
+            
+            # Seamless Continuity Logic: Anchor prediction to the last known point
+            y_hat_last = model.predict([[last_year]])[0]
+            continuity_offset = y[-1] - y_hat_last
+            
             future_years = np.arange(last_year + 1, 2031).reshape(-1, 1)
-            future_poly = poly.transform(future_years)
-            predictions = model.predict(future_poly)
+            raw_predictions = model.predict(future_years)
             
             for i, year in enumerate(future_years.flatten()):
-                pred_val = float(predictions[i])
+                pred_val = float(raw_predictions[i]) + continuity_offset
                 historical_data.append({
                     'Year': int(year),
                     'Value': max(0, pred_val),
                     'is_predicted': True,
-                    'Value_Min': max(0, pred_val - (volatility * 1.5)), # 1.5 StdDev for visible range
+                    'Value_Min': max(0, pred_val - (volatility * 1.5)), # Visibility band
                     'Value_Max': pred_val + (volatility * 1.5)
                 })
         except Exception as e:
@@ -90,6 +96,7 @@ class DataManager:
         return historical_data
 
     def get_top_crops(self, state_name, district_name, year=None):
+        # ... (unchanged)
         """Returns the top performing crops in a district for a given year (or latest available)."""
         if year is None:
             year = self.df[(self.df['State Name'] == state_name) & (self.df['Dist Name'] == district_name)]['Year'].max()
