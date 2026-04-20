@@ -57,26 +57,32 @@ class DataManager:
 
         # Prediction Logic using Degree-3 Polynomial Regression & Continuity Offset
         try:
-            X = subset['Year'].values.reshape(-1, 1)
-            y = subset[target_col].values
+            # Use only modern data (since 1990) for training to capture current trends accurately
+            # Legacy data (1960s-1980s) can "flatten" the trend line inappropriately for 2030 projections.
+            subset_train = subset[subset['Year'] >= 1990]
+            if len(subset_train) < 5: 
+                subset_train = subset
+                
+            X_train = subset_train['Year'].values.reshape(-1, 1)
+            y_train = subset_train[target_col].values
             
-            # Pipeline with Scaling for numerical stability with large year values
+            # Pipeline with Scaling for numerical stability
             model = Pipeline([
                 ('scaler', StandardScaler()),
                 ('poly', PolynomialFeatures(degree=3)),
                 ('reg', LinearRegression())
             ])
-            model.fit(X, y)
+            model.fit(X_train, y_train)
             
             # Volatility estimation based on historic residuals (Standard Deviation)
-            y_pred_hist = model.predict(X)
-            volatility = np.std(y - y_pred_hist)
+            y_pred_hist = model.predict(X_train)
+            volatility = np.std(y_train - y_pred_hist)
             
             last_year = int(subset['Year'].max())
             
             # Seamless Continuity Logic: Anchor prediction to the last known point
             y_hat_last = model.predict([[last_year]])[0]
-            continuity_offset = y[-1] - y_hat_last
+            continuity_offset = subset[subset['Year'] == last_year][target_col].values[0] - y_hat_last
             
             future_years = np.arange(last_year + 1, 2031).reshape(-1, 1)
             raw_predictions = model.predict(future_years)

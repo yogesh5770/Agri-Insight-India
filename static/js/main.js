@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                             label += context.parsed.y.toFixed(2);
                                         }
                                         if (context.raw.is_predicted) {
-                                            label += ` (Predicted) [Range: ${context.raw.min.toFixed(0)}-${context.raw.max.toFixed(0)}]`;
+                                            label += ` (Modern Trend Forecast) [Range: ${context.raw.min.toFixed(0)}-${context.raw.max.toFixed(0)}]`;
                                         }
                                         return label;
                                     }
