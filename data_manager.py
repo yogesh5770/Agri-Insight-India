@@ -1,5 +1,7 @@
 import pandas as pd
 import json
+import numpy as np
+from sklearn.linear_model import LinearRegression
 
 class DataManager:
     def __init__(self, csv_path):
@@ -20,8 +22,8 @@ class DataManager:
 
     def get_district_trends(self, state_name, district_name, crop_name, metric='YIELD'):
         """
-        Returns time-series data for a crop in a district within a specific state.
-        Metric can be 'AREA', 'PRODUCTION', or 'YIELD'.
+        Returns time-series data for a crop in a district within a specific state,
+        including predictions up to 2030.
         """
         col_match = f"{crop_name.upper()} {metric.upper()}"
         target_col = None
@@ -36,7 +38,41 @@ class DataManager:
 
         # Filter by both state and district for uniqueness
         subset = self.df[(self.df['State Name'] == state_name) & (self.df['Dist Name'] == district_name)][['Year', target_col]].sort_values('Year')
-        return subset.to_dict(orient='records')
+        
+        # Prepare historical data
+        historical_data = []
+        for _, row in subset.iterrows():
+            historical_data.append({
+                'Year': int(row['Year']),
+                'Value': float(row[target_col]),
+                'is_predicted': False
+            })
+
+        if not historical_data:
+            return []
+
+        # Prediction Logic using Linear Regression
+        try:
+            X = subset['Year'].values.reshape(-1, 1)
+            y = subset[target_col].values
+            
+            model = LinearRegression()
+            model.fit(X, y)
+            
+            last_year = int(subset['Year'].max())
+            future_years = np.arange(last_year + 1, 2031).reshape(-1, 1)
+            predictions = model.predict(future_years)
+            
+            for i, year in enumerate(future_years.flatten()):
+                historical_data.append({
+                    'Year': int(year),
+                    'Value': max(0, float(predictions[i])), # Ensure no negative yields
+                    'is_predicted': True
+                })
+        except Exception as e:
+            print(f"Prediction error: {e}")
+
+        return historical_data
 
     def get_top_crops(self, state_name, district_name, year=None):
         """Returns the top performing crops in a district for a given year (or latest available)."""

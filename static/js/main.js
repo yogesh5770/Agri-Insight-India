@@ -55,12 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(res => res.json())
             .then(data => {
                 const labels = data.map(d => d.Year);
-                // Dynamically find the data column (the one that isn't 'Year')
-                const values = data.map(d => {
-                    const keys = Object.keys(d);
-                    const valKey = keys.find(k => k !== 'Year');
-                    return d[valKey];
-                });
+                const values = data.map(d => d.Value);
 
                 if (chartInstance) chartInstance.destroy();
 
@@ -70,11 +65,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         labels: labels,
                         datasets: [{
                             label: `${crop} ${metric}`,
-                            data: values,
+                            data: data.map(d => ({
+                                x: d.Year,
+                                y: d.Value,
+                                is_predicted: d.is_predicted
+                            })),
                             borderColor: '#10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
-                            tension: 0.4
+                            tension: 0.4,
+                            pointRadius: data.map(d => d.is_predicted ? 2 : 4),
+                            segment: {
+                                borderDash: ctx => ctx.p1.raw.is_predicted ? [5, 5] : undefined,
+                                borderColor: ctx => ctx.p1.raw.is_predicted ? '#6ee7b7' : '#10b981'
+                            }
                         }]
                     },
                     options: {
@@ -83,6 +87,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         plugins: {
                             legend: {
                                 labels: { color: '#f8fafc' }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) label += ': ';
+                                        if (context.parsed.y !== null) {
+                                            label += context.parsed.y.toFixed(2);
+                                        }
+                                        if (context.raw.is_predicted) {
+                                            label += ' (Predicted)';
+                                        }
+                                        return label;
+                                    }
+                                }
                             }
                         },
                         scales: {
