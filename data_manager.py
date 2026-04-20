@@ -65,8 +65,26 @@ class DataManager:
             X_train = subset_train['Year'].values.reshape(-1, 1)
             y_train = subset_train[target_col].values
             
-            # Pipeline with Ridge Regularization to prevent "runaway" curves (overfitting)
-            # Degree 2 is more stable than Degree 3 for agricultural forecasts.
+            # 1. Dormant Crop Detection: If the last 10 recorded years are zero, keep prediction at zero.
+            recent_y = y_train[-10:] if len(y_train) >= 10 else y_train
+            if np.all(recent_y == 0):
+                last_year = int(subset['Year'].max())
+                future_years = np.arange(last_year + 1, 2031).reshape(-1, 1)
+                for year in future_years.flatten():
+                    historical_data.append({
+                        'Year': int(year),
+                        'Value': 0.0,
+                        'is_predicted': True,
+                        'Value_Min': 0.0,
+                        'Value_Max': 0.0
+                    })
+                return historical_data
+
+            # 2. Trend Polarity Protection: Identify if the modern trend is overall negative
+            lin_check = LinearRegression().fit(X_train, y_train)
+            is_negative_trend = lin_check.coef_[0] < 0
+            
+            # Pipeline with Ridge Regularization to prevent "runaway" curves
             model = Pipeline([
                 ('scaler', StandardScaler()),
                 ('poly', PolynomialFeatures(degree=2)),
@@ -79,21 +97,27 @@ class DataManager:
             volatility = np.std(y_train - y_pred_hist)
             
             last_year = int(subset['Year'].max())
+            last_val = subset[subset['Year'] == last_year][target_col].values[0]
             
             # Seamless Continuity Logic: Anchor prediction to the last known point
             y_hat_last = model.predict([[last_year]])[0]
-            continuity_offset = subset[subset['Year'] == last_year][target_col].values[0] - y_hat_last
+            continuity_offset = last_val - y_hat_last
             
             future_years = np.arange(last_year + 1, 2031).reshape(-1, 1)
             raw_predictions = model.predict(future_years)
             
             for i, year in enumerate(future_years.flatten()):
                 pred_val = float(raw_predictions[i]) + continuity_offset
+                
+                # Apply Trend Polarity Cap: If trend is negative, don't allow rebound above last point
+                if is_negative_trend:
+                    pred_val = min(pred_val, last_val)
+                    
                 historical_data.append({
                     'Year': int(year),
                     'Value': max(0, pred_val),
                     'is_predicted': True,
-                    'Value_Min': max(0, pred_val - (volatility * 1.5)), # Visibility band
+                    'Value_Min': max(0, pred_val - (volatility * 1.5)),
                     'Value_Max': pred_val + (volatility * 1.5)
                 })
         except Exception as e:
