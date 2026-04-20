@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
 
 class DataManager:
     def __init__(self, csv_path):
@@ -23,7 +24,7 @@ class DataManager:
     def get_district_trends(self, state_name, district_name, crop_name, metric='YIELD'):
         """
         Returns time-series data for a crop in a district within a specific state,
-        including predictions up to 2030.
+        including high-accuracy polynomial predictions and volatility forecasting up to 2030.
         """
         col_match = f"{crop_name.upper()} {metric.upper()}"
         target_col = None
@@ -45,29 +46,43 @@ class DataManager:
             historical_data.append({
                 'Year': int(row['Year']),
                 'Value': float(row[target_col]),
-                'is_predicted': False
+                'is_predicted': False,
+                'Value_Min': float(row[target_col]),
+                'Value_Max': float(row[target_col])
             })
 
         if not historical_data:
             return []
 
-        # Prediction Logic using Linear Regression
+        # Prediction Logic using Polynomial Regression & Volatility
         try:
             X = subset['Year'].values.reshape(-1, 1)
             y = subset[target_col].values
             
+            # Polynomial Features (Degree 2 for steady trend curves)
+            poly = PolynomialFeatures(degree=2)
+            X_poly = poly.fit_transform(X)
+            
             model = LinearRegression()
-            model.fit(X, y)
+            model.fit(X_poly, y)
+            
+            # Volatility estimation based on historic residuals (Standard Deviation)
+            y_pred_hist = model.predict(X_poly)
+            volatility = np.std(y - y_pred_hist)
             
             last_year = int(subset['Year'].max())
             future_years = np.arange(last_year + 1, 2031).reshape(-1, 1)
-            predictions = model.predict(future_years)
+            future_poly = poly.transform(future_years)
+            predictions = model.predict(future_poly)
             
             for i, year in enumerate(future_years.flatten()):
+                pred_val = float(predictions[i])
                 historical_data.append({
                     'Year': int(year),
-                    'Value': max(0, float(predictions[i])), # Ensure no negative yields
-                    'is_predicted': True
+                    'Value': max(0, pred_val),
+                    'is_predicted': True,
+                    'Value_Min': max(0, pred_val - (volatility * 1.5)), # 1.5 StdDev for visible range
+                    'Value_Max': pred_val + (volatility * 1.5)
                 })
         except Exception as e:
             print(f"Prediction error: {e}")
@@ -95,7 +110,6 @@ class DataManager:
         # Sort by yield descending
         return sorted(crop_data, key=lambda x: x['yield'], reverse=True)[:10]
 
-# Simple test if run directly
 if __name__ == "__main__":
     dm = DataManager('ICRISAT-District Level Data.csv')
     print(dm.get_states()[:5])

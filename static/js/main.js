@@ -55,49 +55,73 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(res => res.json())
             .then(data => {
                 const labels = data.map(d => d.Year);
-                const values = data.map(d => d.Value);
-
+                
                 if (chartInstance) chartInstance.destroy();
 
                 chartInstance = new Chart(chartCtx, {
                     type: 'line',
                     data: {
                         labels: labels,
-                        datasets: [{
-                            label: `${crop} ${metric}`,
-                            data: data.map(d => ({
-                                x: d.Year,
-                                y: d.Value,
-                                is_predicted: d.is_predicted
-                            })),
-                            borderColor: '#10b981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                            fill: true,
-                            tension: 0.4,
-                            pointRadius: data.map(d => d.is_predicted ? 2 : 4),
-                            segment: {
-                                borderDash: ctx => ctx.p1.raw.is_predicted ? [5, 5] : undefined,
-                                borderColor: ctx => ctx.p1.raw.is_predicted ? '#6ee7b7' : '#10b981'
+                        datasets: [
+                            {
+                                label: `${crop} ${metric}`,
+                                data: data.map(d => ({
+                                    x: d.Year,
+                                    y: d.Value,
+                                    is_predicted: d.is_predicted,
+                                    min: d.Value_Min,
+                                    max: d.Value_Max
+                                })),
+                                borderColor: '#10b981',
+                                backgroundColor: 'transparent',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: data.map(d => d.is_predicted ? 0 : 3), // Hide points for prediction for a cleaner line
+                                segment: {
+                                    borderDash: ctx => ctx.p1.raw.is_predicted ? [5, 5] : undefined,
+                                    borderColor: ctx => ctx.p1.raw.is_predicted ? '#6ee7b7' : '#10b981'
+                                }
+                            },
+                            {
+                                label: 'Lower Bound',
+                                data: data.map(d => d.Value_Min),
+                                borderColor: 'transparent',
+                                pointRadius: 0,
+                                fill: false,
+                                tension: 0.4
+                            },
+                            {
+                                label: 'Volatility Range',
+                                data: data.map(d => d.Value_Max),
+                                borderColor: 'transparent',
+                                backgroundColor: 'rgba(110, 231, 183, 0.1)',
+                                fill: '-1', // Fill to Lower Bound (dataset index 1)
+                                pointRadius: 0,
+                                tension: 0.4
                             }
-                        }]
+                        ]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
                             legend: {
-                                labels: { color: '#f8fafc' }
+                                labels: { 
+                                    color: '#f8fafc',
+                                    filter: item => !item.text.includes('Bound') // Hide bound helpers from legend
+                                }
                             },
                             tooltip: {
                                 callbacks: {
                                     label: function(context) {
+                                        if (context.datasetIndex > 0) return null; // Avoid redundant tooltips for range
                                         let label = context.dataset.label || '';
                                         if (label) label += ': ';
                                         if (context.parsed.y !== null) {
                                             label += context.parsed.y.toFixed(2);
                                         }
                                         if (context.raw.is_predicted) {
-                                            label += ' (Predicted)';
+                                            label += ` (Predicted) [Range: ${context.raw.min.toFixed(0)}-${context.raw.max.toFixed(0)}]`;
                                         }
                                         return label;
                                     }
