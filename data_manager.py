@@ -1,7 +1,7 @@
 import pandas as pd
 import json
 import numpy as np
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.pipeline import Pipeline
 
@@ -55,10 +55,9 @@ class DataManager:
         if not historical_data:
             return []
 
-        # Prediction Logic using Degree-3 Polynomial Regression & Continuity Offset
+        # Prediction Logic using Stabilized Ridge Regression & Continuity Offset
         try:
             # Use only modern data (since 1990) for training to capture current trends accurately
-            # Legacy data (1960s-1980s) can "flatten" the trend line inappropriately for 2030 projections.
             subset_train = subset[subset['Year'] >= 1990]
             if len(subset_train) < 5: 
                 subset_train = subset
@@ -66,11 +65,12 @@ class DataManager:
             X_train = subset_train['Year'].values.reshape(-1, 1)
             y_train = subset_train[target_col].values
             
-            # Pipeline with Scaling for numerical stability
+            # Pipeline with Ridge Regularization to prevent "runaway" curves (overfitting)
+            # Degree 2 is more stable than Degree 3 for agricultural forecasts.
             model = Pipeline([
                 ('scaler', StandardScaler()),
-                ('poly', PolynomialFeatures(degree=3)),
-                ('reg', LinearRegression())
+                ('poly', PolynomialFeatures(degree=2)),
+                ('reg', Ridge(alpha=10.0))
             ])
             model.fit(X_train, y_train)
             
@@ -102,6 +102,7 @@ class DataManager:
         return historical_data
 
     def get_top_crops(self, state_name, district_name, year=None):
+        # ... (unchanged)
         # ... (unchanged)
         """Returns the top performing crops in a district for a given year (or latest available)."""
         if year is None:
